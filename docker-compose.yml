@@ -1,0 +1,70 @@
+# adwhale-ad-platform 로컬 인프라
+# 실행: docker compose up -d   /   종료: docker compose down   (데이터까지 삭제: docker compose down -v)
+name: adwhale
+
+services:
+  # ── Kafka 브로커 (KRaft 모드: Zookeeper 없이 단독 실행) ──────────────────────
+  kafka:
+    image: apache/kafka:4.1.0
+    container_name: adwhale-kafka
+    ports:
+      - "9092:9092"   # Mac(호스트)에서 접속하는 포트 → 나중에 Spring Boot 앱이 localhost:9092로 붙음
+    environment:
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller        # 브로커 + 컨트롤러를 한 노드가 겸함 (로컬 개발용)
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      # 리스너 3개: 도커 내부용(29092), 호스트용(9092), 컨트롤러용(9093)
+      KAFKA_LISTENERS: PLAINTEXT://:29092,PLAINTEXT_HOST://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      # 브로커가 1대뿐이라 복제본 수는 전부 1
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"      # 오타난 토픽이 자동 생성되지 않도록 → 토픽은 kafka-init에서 명시적으로 생성
+      KAFKA_LOG_RETENTION_HOURS: 168                # 메시지 보관 7일 (Kafka 자체도 디스크에 저장함)
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+
+  # ── 토픽 생성 (한 번 실행하고 종료되는 컨테이너) ─────────────────────────────
+  kafka-init:
+    image: apache/kafka:4.1.0
+    container_name: adwhale-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        for t in ad-request ad-impression ad-click; do
+          /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 \
+            --create --if-not-exists --topic "$$t" --partitions 3 --replication-factor 1
+        done
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --list
+    restart: "no"
+
+  # ── Kafka UI (브라우저에서 토픽/메시지 확인용) ──────────────────────────────
+  kafka-ui:
+    image: kafbat/kafka-ui:latest
+    container_name: adwhale-kafka-ui
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8989:8080"   # 8080은 나중에 API 서버용으로 비워둠
+    environment:
+      KAFKA_CLUSTERS_0_NAME: adwhale-local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+
+volumes:
+  kafka-data:
