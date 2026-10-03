@@ -1,0 +1,15 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: ad-api
+  threads:
+    virtual:
+      enabled: true   # 요청마다 가상 스레드 사용 (Java 21+). 동기 코드 그대로 높은 동시성 처리
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
