@@ -12,6 +12,11 @@ spring:
     consumer:
       group-id: ad-log-writer           # 같은 group-id끼리는 메시지를 나눠 받고, 다른 group-id는 각자 전부 받음
       auto-offset-reset: earliest       # 이 그룹이 처음 붙을 때 토픽의 맨 처음부터 읽음 (1단계 테스트 메시지도 저장됨)
+    producer:
+      acks: all                         # 브로커가 디스크에 확실히 저장한 뒤에 "성공" 응답 (유실 방지)
+      properties:
+        enable.idempotence: true        # 재전송 시 같은 메시지가 Kafka에 두 번 들어가지 않게 함
+        max.block.ms: 3000              # Kafka가 죽어 있으면 3초만 기다리고 실패 처리 (기본 60초면 API가 멈춘 것처럼 보임)
 
 management:
   endpoints:

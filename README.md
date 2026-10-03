@@ -17,7 +17,7 @@ Dashboard ──▶ API 서버 ──▶ Redis(캐시) ──miss──▶ Prest
 - [x] 1. Kafka 로컬 실행 + 토픽 3개 생성 (Docker Compose)
 - [x] 2. Spring Boot 프로젝트 `ad-api` 생성 (Java 25 + Spring Boot 4.1 + Gradle KTS)
 - [x] 3. Consumer: 토픽 메시지를 디스크 로그 파일로 저장 (`ad-api/logs/{토픽}/{토픽}-{날짜}.log`)
-- [ ] 4. API 서버: /request, /impression, /click → Kafka Producer
+- [x] 4. API 서버: /v1/ad/request, /impression, /click → Kafka Producer
 - [ ] 5. Redis
 - [ ] 6. 집계 / Presto / 대시보드
 
@@ -78,5 +78,25 @@ curl http://localhost:8080/actuator/health   # {"status":"UP"}
 ```bash
 ls -R ad-api/logs
 tail -f ad-api/logs/ad-impression/ad-impression-*.log   # 실시간으로 쌓이는 것 보기
+```
+
+## 4단계: API → Kafka → 로그 파일
+
+| API | 하는 일 | 응답 |
+|---|---|---|
+| `POST /v1/ad/request` | 광고 1개 응답 + `ad-request` 토픽에 기록 | 200 + 광고 정보(requestId 포함) |
+| `POST /v1/ad/impression` | `ad-impression` 토픽에 기록 | 202 |
+| `POST /v1/ad/click` | `ad-click` 토픽에 기록 | 202 |
+
+`scripts/flow.sh` : 요청 → 노출 → 클릭을 한 번에 보내는 테스트 스크립트
+
+```bash
+./scripts/flow.sh          # 1회
+./scripts/flow.sh 20       # 20회 반복
+```
+
+필수값 누락 테스트 (400 응답):
+```bash
+curl -i -X POST localhost:8080/v1/ad/impression -H 'Content-Type: application/json' -d '{}'
 ```
 
