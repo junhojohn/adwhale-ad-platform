@@ -19,6 +19,7 @@ Dashboard ──▶ API 서버 ──▶ Redis(캐시) ──miss──▶ Prest
 - [x] 3. Consumer: 토픽 메시지를 디스크 로그 파일로 저장 (`ad-api/logs/{토픽}/{토픽}-{날짜}.log`)
 - [x] 4. API 서버: /v1/ad/request, /impression, /click → Kafka Producer
 - [x] 4-1. Consumer 분리: `ad-log-consumer` 별도 앱 (ad-api는 Producer만)
+- [x] 4-2. Gradle 멀티 모듈 + 공통 모듈 `ad-common`
 - [ ] 5. Redis
 - [ ] 6. 집계 / Presto / 대시보드
 
@@ -56,8 +57,7 @@ docker exec -it adwhale-kafka /opt/kafka/bin/kafka-console-producer.sh \
 ## 2단계: ad-api 실행
 
 ```bash
-cd ad-api
-./gradlew bootRun          # 첫 실행은 Gradle 9.5 + 의존성(+필요하면 JDK 25) 다운로드로 몇 분 걸림
+./gradlew :ad-api:bootRun   # 루트에서 실행. 첫 실행은 Gradle 9.5 + 의존성(+필요하면 JDK 25) 다운로드로 몇 분 걸림
 ```
 
 다른 터미널에서:
@@ -66,7 +66,7 @@ curl http://localhost:8080/ping              # pong
 curl http://localhost:8080/actuator/health   # {"status":"UP"}
 ```
 
-테스트: `./gradlew test`
+테스트: `./gradlew test` (전체 모듈)
 
 ## 3단계: Consumer → 로그 파일
 
@@ -108,16 +108,17 @@ curl -i -X POST localhost:8080/v1/ad/impression -H 'Content-Type: application/js
 | `ad-api` | HTTP 받아서 Kafka로 전송 (Producer) | 8080 |
 | `ad-log-consumer` | Kafka에서 읽어서 로그 파일 저장 (Consumer) | 없음 |
 
-각각 IntelliJ에서 따로 열어 실행하거나 터미널 2개에서:
+IntelliJ에서 루트 폴더(adwhale-ad-platform)를 열면 두 앱이 한 창에서 보임. 또는 터미널 2개에서:
 ```bash
-(cd ad-api && ./gradlew bootRun)
-(cd ad-log-consumer && ./gradlew bootRun)
+./gradlew :ad-api:bootRun
+./gradlew :ad-log-consumer:bootRun
 ```
 로그 파일 위치: `ad-log-consumer/logs/...`
 
 ### Consumer 2개 띄워서 파티션 나눠 받기
 ```bash
-cd ad-log-consumer && ./gradlew bootJar
+./gradlew :ad-log-consumer:bootJar
+cd ad-log-consumer
 java -jar build/libs/ad-log-consumer-0.0.1-SNAPSHOT.jar   # 터미널 A
 java -jar build/libs/ad-log-consumer-0.0.1-SNAPSHOT.jar   # 터미널 B
 ```
@@ -125,4 +126,23 @@ java -jar build/libs/ad-log-consumer-0.0.1-SNAPSHOT.jar   # 터미널 B
 - `../scripts/flow.sh 20` 실행 → 각 터미널에 서로 다른 partition 번호의 메시지만 찍힘
 - 하나를 Ctrl+C로 끄면 남은 하나가 모든 파티션을 다시 가져감
 - Kafka UI → Consumers → `ad-log-writer` 에서 멤버별 파티션 할당 확인
+
+## 4-2단계: 멀티 모듈 구조
+
+```
+adwhale-ad-platform/          ← Gradle 루트 (wrapper, settings, 공통 설정)
+├── ad-common/                ← 공통 코드 (순수 Java, Spring 의존성 없음)
+│   ├── kafka/AdTopics            토픽 이름
+│   └── event/AdRequestEvent      Kafka 메시지 형식
+│       event/AdTrackingEvent
+├── ad-api/                   ← implementation(project(":ad-common"))
+└── ad-log-consumer/          ← implementation(project(":ad-common"))
+```
+
+| 명령 (루트에서) | 의미 |
+|---|---|
+| `./gradlew build` | 전체 모듈 빌드 + 테스트 |
+| `./gradlew :ad-api:bootRun` | ad-api만 실행 |
+| `./gradlew :ad-log-consumer:bootRun` | ad-log-consumer만 실행 |
+| `./gradlew :ad-api:dependencies` | ad-api 의존성 트리 확인 |
 

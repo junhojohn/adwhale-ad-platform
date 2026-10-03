@@ -1,4 +1,4 @@
-package com.adwhale.ad.api.kafka.event;
+package com.adwhale.ad.common.event;
 
 /**
  * Kafka ad-impression / ad-click 토픽에 들어가는 메시지

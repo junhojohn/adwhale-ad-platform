@@ -1,4 +1,4 @@
-package com.adwhale.ad.api.kafka.event;
+package com.adwhale.ad.common.event;
 
 /**
  * Kafka ad-request 토픽에 들어가는 메시지 (JSON으로 변환되어 한 줄로 저장됨)

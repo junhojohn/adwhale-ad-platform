@@ -4,9 +4,9 @@ import com.adwhale.ad.api.dto.AdRequestBody;
 import com.adwhale.ad.api.dto.AdResponse;
 import com.adwhale.ad.api.dto.TrackingBody;
 import com.adwhale.ad.api.kafka.AdEventProducer;
-import com.adwhale.ad.api.kafka.AdTopics;
-import com.adwhale.ad.api.kafka.event.AdRequestEvent;
-import com.adwhale.ad.api.kafka.event.AdTrackingEvent;
+import com.adwhale.ad.common.kafka.AdTopics;
+import com.adwhale.ad.common.event.AdRequestEvent;
+import com.adwhale.ad.common.event.AdTrackingEvent;
 import org.springframework.stereotype.Service;
 
 import java.util.UUID;

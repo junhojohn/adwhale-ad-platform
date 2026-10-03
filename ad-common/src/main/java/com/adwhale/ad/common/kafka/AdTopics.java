@@ -1,8 +1,8 @@
-package com.adwhale.ad.consumer;
+package com.adwhale.ad.common.kafka;
 
 /**
  * Kafka 토픽 이름 모음. docker-compose.yml의 kafka-init에서 만든 토픽과 이름이 같아야 한다.
- * ad-api의 AdTopics와 값이 같아야 한다 (앱이 분리되어 각자 복사본을 가짐).
+ * ad-api(Producer)와 ad-log-consumer(Consumer)가 함께 사용한다.
  */
 public final class AdTopics {
 
