@@ -1,0 +1,40 @@
+# ── macOS ───────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# ── IDE ─────────────────────────────────────────────────
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+.vscode/
+.fleet/
+
+# ── 빌드 산출물 (Gradle) ────────────────────────────────
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+.kotlin/
+
+# ── 실행 중 생기는 파일 ─────────────────────────────────
+logs/
+*.log
+data/
+tmp/
+
+# ── 비밀값 / 로컬 전용 설정 (절대 커밋 금지) ────────────
+# DB 비밀번호, AWS 키 같은 값은 이 파일들이나 환경변수로만 관리
+.env
+.env.*
+!.env.example
+**/src/main/resources/application-local.yml
+**/src/main/resources/application-secret*.yml
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore
+credentials*

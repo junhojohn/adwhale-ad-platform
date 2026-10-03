@@ -16,7 +16,7 @@ Dashboard ──▶ API 서버 ──▶ Redis(캐시) ──miss──▶ Prest
 
 - [x] 1. Kafka 로컬 실행 + 토픽 3개 생성 (Docker Compose)
 - [x] 2. Spring Boot 프로젝트 `ad-api` 생성 (Java 25 + Spring Boot 4.1 + Gradle KTS)
-- [ ] 3. Consumer: 토픽 메시지를 디스크 로그 파일로 저장
+- [x] 3. Consumer: 토픽 메시지를 디스크 로그 파일로 저장 (`ad-api/logs/{토픽}/{토픽}-{날짜}.log`)
 - [ ] 4. API 서버: /request, /impression, /click → Kafka Producer
 - [ ] 5. Redis
 - [ ] 6. 집계 / Presto / 대시보드
@@ -66,3 +66,17 @@ curl http://localhost:8080/actuator/health   # {"status":"UP"}
 ```
 
 테스트: `./gradlew test`
+
+## 3단계: Consumer → 로그 파일
+
+1. `docker compose up -d` 로 Kafka 실행
+2. `ad-api` 실행 (IntelliJ ▶ 또는 `./gradlew bootRun`)
+   - 시작 로그에 `광고 로그 저장 경로: .../logs` 가 찍힘
+   - `auto-offset-reset: earliest` 라서 1단계에서 보낸 테스트 메시지가 먼저 저장됨
+3. console-producer로 메시지 전송 (1단계 명령 그대로, 토픽만 바꿔가며)
+4. 파일 확인
+```bash
+ls -R ad-api/logs
+tail -f ad-api/logs/ad-impression/ad-impression-*.log   # 실시간으로 쌓이는 것 보기
+```
+

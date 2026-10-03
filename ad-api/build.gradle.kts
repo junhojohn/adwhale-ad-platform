@@ -24,6 +24,7 @@ dependencies {
 
     implementation("org.springframework.boot:spring-boot-starter-webmvc")   // HTTP API (내장 Tomcat)
     implementation("org.springframework.boot:spring-boot-starter-actuator") // /actuator/health 같은 운영용 엔드포인트
+    implementation("org.springframework.boot:spring-boot-starter-kafka")    // Kafka Producer/Consumer (spring-kafka)
 
     testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
