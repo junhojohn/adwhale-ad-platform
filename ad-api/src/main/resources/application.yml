@@ -9,9 +9,6 @@ spring:
       enabled: true   # 요청마다 가상 스레드 사용 (Java 21+). 동기 코드 그대로 높은 동시성 처리
   kafka:
     bootstrap-servers: localhost:9092   # docker-compose의 PLAINTEXT_HOST 리스너
-    consumer:
-      group-id: ad-log-writer           # 같은 group-id끼리는 메시지를 나눠 받고, 다른 group-id는 각자 전부 받음
-      auto-offset-reset: earliest       # 이 그룹이 처음 붙을 때 토픽의 맨 처음부터 읽음 (1단계 테스트 메시지도 저장됨)
     producer:
       acks: all                         # 브로커가 디스크에 확실히 저장한 뒤에 "성공" 응답 (유실 방지)
       properties:
@@ -23,7 +20,3 @@ management:
     web:
       exposure:
         include: health,info
-
-adwhale:
-  log:
-    dir: ./logs   # 로그 파일 저장 위치 (실행 위치 기준 상대경로). 실제 절대경로는 앱 시작 시 로그로 출력됨

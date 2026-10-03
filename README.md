@@ -5,10 +5,10 @@ adwhale-sdk-kotlin 리뉴얼과 함께 만드는 광고 서버 (요청 / 노출 
 ## 목표 구조
 
 ```
-SDK ──HTTP──▶ API 서버 ──▶ Kafka (ad-request / ad-impression / ad-click)
+SDK ──HTTP──▶ ad-api ──▶ Kafka (ad-request / ad-impression / ad-click)
                                   │
                                   ▼
-                           Consumer ──▶ 디스크 로그 파일 ──▶ (이후) 저장소 ──▶ Presto
+                           ad-log-consumer ──▶ 디스크 로그 파일 ──▶ (이후) 저장소 ──▶ Presto
 Dashboard ──▶ API 서버 ──▶ Redis(캐시) ──miss──▶ Presto
 ```
 
@@ -18,6 +18,7 @@ Dashboard ──▶ API 서버 ──▶ Redis(캐시) ──miss──▶ Prest
 - [x] 2. Spring Boot 프로젝트 `ad-api` 생성 (Java 25 + Spring Boot 4.1 + Gradle KTS)
 - [x] 3. Consumer: 토픽 메시지를 디스크 로그 파일로 저장 (`ad-api/logs/{토픽}/{토픽}-{날짜}.log`)
 - [x] 4. API 서버: /v1/ad/request, /impression, /click → Kafka Producer
+- [x] 4-1. Consumer 분리: `ad-log-consumer` 별도 앱 (ad-api는 Producer만)
 - [ ] 5. Redis
 - [ ] 6. 집계 / Presto / 대시보드
 
@@ -76,8 +77,8 @@ curl http://localhost:8080/actuator/health   # {"status":"UP"}
 3. console-producer로 메시지 전송 (1단계 명령 그대로, 토픽만 바꿔가며)
 4. 파일 확인
 ```bash
-ls -R ad-api/logs
-tail -f ad-api/logs/ad-impression/ad-impression-*.log   # 실시간으로 쌓이는 것 보기
+ls -R ad-log-consumer/logs
+tail -f ad-log-consumer/logs/ad-impression/ad-impression-*.log   # 실시간으로 쌓이는 것 보기
 ```
 
 ## 4단계: API → Kafka → 로그 파일
@@ -99,4 +100,29 @@ tail -f ad-api/logs/ad-impression/ad-impression-*.log   # 실시간으로 쌓이
 ```bash
 curl -i -X POST localhost:8080/v1/ad/impression -H 'Content-Type: application/json' -d '{}'
 ```
+
+## 4-1단계: Consumer 분리
+
+| 앱 | 역할 | 포트 |
+|---|---|---|
+| `ad-api` | HTTP 받아서 Kafka로 전송 (Producer) | 8080 |
+| `ad-log-consumer` | Kafka에서 읽어서 로그 파일 저장 (Consumer) | 없음 |
+
+각각 IntelliJ에서 따로 열어 실행하거나 터미널 2개에서:
+```bash
+(cd ad-api && ./gradlew bootRun)
+(cd ad-log-consumer && ./gradlew bootRun)
+```
+로그 파일 위치: `ad-log-consumer/logs/...`
+
+### Consumer 2개 띄워서 파티션 나눠 받기
+```bash
+cd ad-log-consumer && ./gradlew bootJar
+java -jar build/libs/ad-log-consumer-0.0.1-SNAPSHOT.jar   # 터미널 A
+java -jar build/libs/ad-log-consumer-0.0.1-SNAPSHOT.jar   # 터미널 B
+```
+- 두 번째가 뜨는 순간 리밸런싱 로그(`partitions assigned`)가 찍히고 파티션이 둘로 나뉨
+- `../scripts/flow.sh 20` 실행 → 각 터미널에 서로 다른 partition 번호의 메시지만 찍힘
+- 하나를 Ctrl+C로 끄면 남은 하나가 모든 파티션을 다시 가져감
+- Kafka UI → Consumers → `ad-log-writer` 에서 멤버별 파티션 할당 확인
 

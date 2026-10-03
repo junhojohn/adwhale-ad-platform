@@ -1,4 +1,4 @@
-package com.adwhale.ad.api.consumer;
+package com.adwhale.ad.consumer;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

@@ -1,0 +1,12 @@
+spring:
+  application:
+    name: ad-log-consumer
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: ad-log-writer           # ad-api 안에 있던 Consumer와 같은 그룹 → ad-api가 읽던 위치(offset)부터 이어서 읽음
+      auto-offset-reset: earliest
+
+adwhale:
+  log:
+    dir: ./logs   # 실행 위치 기준 상대경로. 실제 절대경로는 앱 시작 시 로그로 출력됨
