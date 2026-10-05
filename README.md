@@ -20,6 +20,7 @@ Dashboard ──▶ API 서버 ──▶ Redis(캐시) ──miss──▶ Prest
 - [x] 4. API 서버: /v1/ad/request, /impression, /click → Kafka Producer
 - [x] 4-1. Consumer 분리: `ad-log-consumer` 별도 앱 (ad-api는 Producer만)
 - [x] 4-2. Gradle 멀티 모듈 + 공통 모듈 `ad-common`
+- [x] 4-3. DLQ: 처리 실패 메시지를 `{토픽}-dlq` 로 격리
 - [ ] 5. Redis
 - [ ] 6. 집계 / Presto / 대시보드
 
@@ -145,4 +146,35 @@ adwhale-ad-platform/          ← Gradle 루트 (wrapper, settings, 공통 설�
 | `./gradlew :ad-api:bootRun` | ad-api만 실행 |
 | `./gradlew :ad-log-consumer:bootRun` | ad-log-consumer만 실행 |
 | `./gradlew :ad-api:dependencies` | ad-api 의존성 트리 확인 |
+
+## 4-3단계: DLQ (Dead Letter Queue)
+
+```
+ad-impression ─▶ ad-log-consumer ─ 성공 ─▶ 로그 파일
+                       │
+                       └ 실패 ─┬ 잘못된 메시지(JSON 아님, eventId 없음) ─▶ 즉시 ad-impression-dlq
+                               └ 그 외 오류(디스크 등) ─ 1초 간격 2번 재시도 ─ 실패 ─▶ ad-impression-dlq
+```
+
+토픽 추가 반영 (kafka-init 재실행):
+```bash
+docker compose up -d --force-recreate kafka-init
+docker compose logs kafka-init      # *-dlq 토픽 3개 확인
+```
+
+테스트 1 — 잘못된 메시지 (즉시 DLQ):
+```bash
+./scripts/poison.sh
+```
+
+테스트 2 — 일시적 오류 (재시도 후 DLQ):
+```bash
+F=ad-log-consumer/logs/ad-impression/ad-impression-$(date +%F).log
+mkdir -p "$(dirname "$F")" && touch "$F"
+chmod 444 "$F"           # 오늘 로그 파일을 읽기 전용으로 → 파일 저장 실패 유도
+./scripts/flow.sh 1      # 노출 1건 → 3번 시도(1초 간격) 후 DLQ
+chmod 644 "$F"           # 원복
+```
+
+DLQ 확인: Kafka UI → Topics → `ad-impression-dlq` → Messages (Headers 탭에 원본 토픽/offset/예외 메시지)
 

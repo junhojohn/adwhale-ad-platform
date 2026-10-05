@@ -49,6 +49,10 @@ services:
         for t in ad-request ad-impression ad-click; do
           /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 \
             --create --if-not-exists --topic "$$t" --partitions 3 --replication-factor 1
+          # DLQ: 처리 실패한 메시지 보관용. 실패 건은 적으니 파티션 1개, 원인 분석할 시간을 위해 30일 보관
+          /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 \
+            --create --if-not-exists --topic "$$t-dlq" --partitions 1 --replication-factor 1 \
+            --config retention.ms=2592000000
         done
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --list
     restart: "no"

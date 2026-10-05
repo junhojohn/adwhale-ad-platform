@@ -10,6 +10,13 @@ public final class AdTopics {
     public static final String IMPRESSION = "ad-impression";
     public static final String CLICK = "ad-click";
 
+    /** DLQ(Dead Letter Queue) 토픽 접미사: ad-impression → ad-impression-dlq */
+    public static final String DLQ_SUFFIX = "-dlq";
+
     private AdTopics() {
+    }
+
+    public static String dlq(String topic) {
+        return topic + DLQ_SUFFIX;
     }
 }
