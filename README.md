@@ -23,6 +23,7 @@ Dashboard ──▶ API 서버 ──▶ Redis(캐시) ──miss──▶ Prest
 - [x] 4-3. DLQ: 처리 실패 메시지를 `{토픽}-dlq` 로 격리
 - [x] 4-4. Kafka 장애 시 노출/클릭 API 503 응답 (동기 전송)
 - [x] 4-5. 로드밸런서(nginx): localhost:8080 → ad-api :8081 / :8082
+- [x] 5-1. MySQL 추가 + 스키마 (ad_event, ad_stats_hourly)
 - [ ] 5. Redis
 - [ ] 6. 집계 / Presto / 대시보드
 
@@ -218,4 +219,24 @@ docker compose up -d lb          # nginx 실행
 4. 8082 다시 실행 → 10초 안에 다시 분배에 포함됨
 
 nginx 설정 변경 후 반영: `docker compose restart lb`
+
+## 5-1단계: MySQL + 스키마
+
+| 테이블 | 용도 | 핵심 |
+|---|---|---|
+| `ad_event` | 원본 이벤트 (요청/노출/클릭) | `event_id` UNIQUE → `INSERT IGNORE`로 중복 자동 제거 |
+| `ad_stats_hourly` | 시간별·광고별·지면별 집계 | PK `(stat_hour, ad_id, placement_id)` → 다시 계산해서 덮어쓰기 |
+
+```bash
+docker compose up -d mysql
+docker compose ps mysql                                  # healthy 확인
+docker exec -it adwhale-mysql mysql -uadwhale -padwhale adwhale -e "SHOW TABLES;"
+
+# 연습 쿼리 (INSERT IGNORE 중복 무시 + 집계 덮어쓰기)
+docker exec -i adwhale-mysql mysql -uadwhale -padwhale -t adwhale < mysql/practice.sql
+```
+
+- 스키마 파일: `mysql/init/01-schema.sql` — **DB 볼륨이 비어 있을 때 한 번만** 실행됨
+- 스키마를 고친 뒤 다시 적용: `docker compose rm -sf mysql && docker volume rm adwhale_mysql-data && docker compose up -d mysql` (데이터 삭제됨)
+- GUI 접속: host `localhost` / port `3306` / user `adwhale` / password `adwhale` / db `adwhale`
 

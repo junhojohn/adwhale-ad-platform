@@ -82,5 +82,32 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"   # 컨테이너 안에서 Mac(호스트)에 접근하기 위한 주소
 
+  # ── MySQL (원본 이벤트 + 시간별 집계 저장) ──────────────────────────────────
+  # 비밀번호는 로컬 개발용 기본값. 바꾸려면 루트에 .env 파일을 만들어 MYSQL_PASSWORD=... 로 덮어쓰기 (.env는 git 제외)
+  mysql:
+    image: mysql:8.4
+    container_name: adwhale-mysql
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: adwhale                         # 처음 실행 시 DB 생성
+      MYSQL_USER: adwhale                             # 앱이 접속할 계정 (adwhale DB에 대한 권한만 가짐)
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-adwhale}
+      TZ: Asia/Seoul
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --default-time-zone=+09:00                    # NOW() 등 DB 시간 함수도 KST 기준
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./mysql/init:/docker-entrypoint-initdb.d:ro   # ⚠ DB가 "처음" 만들어질 때만 실행됨 (볼륨이 비어 있을 때)
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-root}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
 volumes:
   kafka-data:
+  mysql-data:
