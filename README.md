@@ -22,6 +22,7 @@ Dashboard ──▶ API 서버 ──▶ Redis(캐시) ──miss──▶ Prest
 - [x] 4-2. Gradle 멀티 모듈 + 공통 모듈 `ad-common`
 - [x] 4-3. DLQ: 처리 실패 메시지를 `{토픽}-dlq` 로 격리
 - [x] 4-4. Kafka 장애 시 노출/클릭 API 503 응답 (동기 전송)
+- [x] 4-5. 로드밸런서(nginx): localhost:8080 → ad-api :8081 / :8082
 - [ ] 5. Redis
 - [ ] 6. 집계 / Presto / 대시보드
 
@@ -193,4 +194,28 @@ curl -i -X POST localhost:8080/v1/ad/impression -H 'Content-Type: application/js
 # → 약 3초 뒤 HTTP/1.1 503, Retry-After: 5
 docker compose start kafka
 ```
+
+## 4-5단계: 로드밸런서 (nginx)
+
+```
+SDK ──▶ localhost:8080 (adwhale-lb, nginx) ──┬──▶ ad-api :8081 ──┐
+                                             └──▶ ad-api :8082 ──┴──▶ Kafka ──▶ ad-log-consumer
+```
+
+> ad-api 기본 포트가 **8081** 로 바뀜. SDK/스크립트는 계속 8080(로드밸런서)으로 호출.
+
+```bash
+docker compose up -d lb          # nginx 실행
+./scripts/run-api.sh 8081        # 터미널 A
+./scripts/run-api.sh 8082        # 터미널 B
+./scripts/lb-test.sh             # 8081 / 8082 번갈아 응답하는지 확인
+```
+
+장애 테스트:
+1. 터미널 B(8082)를 Ctrl+C로 종료
+2. `./scripts/lb-test.sh` → 전부 8081이 응답 (에러 없음)
+3. `./scripts/flow.sh 10` → 요청/노출/클릭 정상 처리
+4. 8082 다시 실행 → 10초 안에 다시 분배에 포함됨
+
+nginx 설정 변경 후 반영: `docker compose restart lb`
 
