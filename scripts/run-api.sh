@@ -6,4 +6,9 @@ PORT=${1:-8081}
 cd "$(dirname "$0")/.."
 
 ./gradlew -q :ad-api:bootJar   # 코드가 바뀌었으면 다시 빌드 (안 바뀌었으면 바로 끝남)
-exec java -jar ad-api/build/libs/ad-api-0.0.1-SNAPSHOT.jar --server.port="$PORT"
+
+# 터미널 기본 java가 아니라, Gradle이 빌드에 사용한 JDK 25로 실행
+JAVA_BIN=$(./gradlew -q :ad-api:printJavaLauncher)
+echo "java: $JAVA_BIN"
+
+exec "$JAVA_BIN" -jar ad-api/build/libs/ad-api-0.0.1-SNAPSHOT.jar --server.port="$PORT"

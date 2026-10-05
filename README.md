@@ -122,8 +122,8 @@ IntelliJ에서 루트 폴더(adwhale-ad-platform)를 열면 두 앱이 한 창�
 ```bash
 ./gradlew :ad-log-consumer:bootJar
 cd ad-log-consumer
-java -jar build/libs/ad-log-consumer-0.0.1-SNAPSHOT.jar   # 터미널 A
-java -jar build/libs/ad-log-consumer-0.0.1-SNAPSHOT.jar   # 터미널 B
+"$(../gradlew -q -p .. :ad-log-consumer:printJavaLauncher)" -jar build/libs/ad-log-consumer-0.0.1-SNAPSHOT.jar   # 터미널 A
+"$(../gradlew -q -p .. :ad-log-consumer:printJavaLauncher)" -jar build/libs/ad-log-consumer-0.0.1-SNAPSHOT.jar   # 터미널 B
 ```
 - 두 번째가 뜨는 순간 리밸런싱 로그(`partitions assigned`)가 찍히고 파티션이 둘로 나뉨
 - `../scripts/flow.sh 20` 실행 → 각 터미널에 서로 다른 partition 번호의 메시지만 찍힘

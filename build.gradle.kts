@@ -24,4 +24,16 @@ subprojects {
     tasks.withType<Test> {
         useJUnitPlatform()
     }
+
+    // 이 모듈을 빌드한 JDK(25)의 java 실행 파일 경로를 출력 → scripts/run-api.sh 에서 java -jar 실행할 때 사용
+    // (터미널의 기본 java 버전과 상관없이 항상 빌드와 같은 JDK로 실행하기 위함)
+    val javaLauncher = extensions.getByType<JavaToolchainService>().launcherFor {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+    tasks.register("printJavaLauncher") {
+        val launcher = javaLauncher   // ↑ 프로젝트(모듈)의 toolchain 서비스에서 가져옴 (task 안의 extensions는 task 자신의 것이라 없음)
+        doLast {
+            println(launcher.get().executablePath.asFile.absolutePath)
+        }
+    }
 }
