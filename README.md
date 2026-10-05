@@ -24,6 +24,7 @@ Dashboard ──▶ API 서버 ──▶ Redis(캐시) ──miss──▶ Prest
 - [x] 4-4. Kafka 장애 시 노출/클릭 API 503 응답 (동기 전송)
 - [x] 4-5. 로드밸런서(nginx): localhost:8080 → ad-api :8081 / :8082
 - [x] 5-1. MySQL 추가 + 스키마 (ad_event, ad_stats_hourly)
+- [x] 5-2. DB Consumer(`ad-db-writer` 그룹): Kafka → MySQL ad_event (배치 + INSERT IGNORE)
 - [ ] 5. Redis
 - [ ] 6. 집계 / Presto / 대시보드
 
@@ -239,4 +240,34 @@ docker exec -i adwhale-mysql mysql -uadwhale -padwhale -t adwhale < mysql/practi
 - 스키마 파일: `mysql/init/01-schema.sql` — **DB 볼륨이 비어 있을 때 한 번만** 실행됨
 - 스키마를 고친 뒤 다시 적용: `docker compose rm -sf mysql && docker volume rm adwhale_mysql-data && docker compose up -d mysql` (데이터 삭제됨)
 - GUI 접속: host `localhost` / port `3306` / user `adwhale` / password `adwhale` / db `adwhale`
+
+## 5-2단계: Kafka → MySQL
+
+```
+                 ┌─ group: ad-log-writer ─▶ AdLogConsumer   ─▶ 로그 파일   (1건씩, 실패 시 DLQ)
+ad-* 토픽 ───────┤
+                 └─ group: ad-db-writer  ─▶ AdEventDbConsumer ─▶ MySQL ad_event (500건씩, DB 장애 시 무한 재시도)
+```
+
+```bash
+docker compose up -d mysql
+./gradlew :ad-log-consumer:bootRun     # ad-db-writer는 새 그룹 → Kafka에 남아 있는 7일치를 처음부터 읽어 DB에 적재
+./scripts/flow.sh 20
+docker exec -i adwhale-mysql mysql -uadwhale -padwhale -t adwhale < mysql/check.sql
+```
+
+### 실험 1: 같은 메시지를 처음부터 다시 읽어도 DB는 그대로 (INSERT IGNORE)
+```bash
+# ad-log-consumer 종료 후
+docker exec adwhale-kafka /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 \
+  --group ad-db-writer --reset-offsets --to-earliest --all-topics --execute
+# ad-log-consumer 다시 실행 → 로그: "신규 0건 / 중복 무시 N건"
+```
+
+### 실험 2: DB 장애 → 복구 후 자동 적재
+```bash
+docker compose stop mysql
+./scripts/flow.sh 5                    # API·파일 저장은 정상, DB 저장은 "재시도 N회째" 로그
+docker compose start mysql             # 재시도 중이던 배치가 저장됨
+```
 
