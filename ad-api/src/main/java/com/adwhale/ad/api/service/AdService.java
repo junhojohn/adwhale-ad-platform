@@ -34,7 +34,8 @@ public class AdService {
                 "https://cdn.example.com/creative/A001.png",
                 "https://example.com/landing/A001");
 
-        producer.send(AdTopics.REQUEST, requestId, new AdRequestEvent(
+        // 요청 로그는 비동기: Kafka가 잠깐 죽어도 광고는 내보낸다 (매출 우선, 요청 로그 일부 유실 허용)
+        producer.sendAsync(AdTopics.REQUEST, requestId, new AdRequestEvent(
                 UUID.randomUUID().toString(),
                 requestId,
                 body.placementId(),
@@ -54,8 +55,9 @@ public class AdService {
         track(AdTopics.CLICK, "click", body);
     }
 
+    /** 노출/클릭은 동기: 정산에 쓰이는 데이터라 Kafka 저장 실패 시 503 → SDK가 재전송 */
     private void track(String topic, String eventType, TrackingBody body) {
-        producer.send(topic, body.requestId(), new AdTrackingEvent(
+        producer.sendSync(topic, body.requestId(), new AdTrackingEvent(
                 body.eventId(),
                 eventType,
                 body.requestId(),

@@ -21,6 +21,7 @@ Dashboard ──▶ API 서버 ──▶ Redis(캐시) ──miss──▶ Prest
 - [x] 4-1. Consumer 분리: `ad-log-consumer` 별도 앱 (ad-api는 Producer만)
 - [x] 4-2. Gradle 멀티 모듈 + 공통 모듈 `ad-common`
 - [x] 4-3. DLQ: 처리 실패 메시지를 `{토픽}-dlq` 로 격리
+- [x] 4-4. Kafka 장애 시 노출/클릭 API 503 응답 (동기 전송)
 - [ ] 5. Redis
 - [ ] 6. 집계 / Presto / 대시보드
 
@@ -177,4 +178,19 @@ chmod 644 "$F"           # 원복
 ```
 
 DLQ 확인: Kafka UI → Topics → `ad-impression-dlq` → Messages (Headers 탭에 원본 토픽/offset/예외 메시지)
+
+## 4-4단계: Kafka 장애 시 503
+
+| API | Kafka 전송 | Kafka 장애 시 응답 |
+|---|---|---|
+| `/v1/ad/request` | 비동기 (기다리지 않음) | 200 — 광고는 정상 응답, 요청 로그만 유실 가능 |
+| `/v1/ad/impression`, `/click` | 동기 (최대 3초 대기) | **503 + `Retry-After: 5`** → SDK가 재전송 |
+
+```bash
+docker compose stop kafka
+curl -i -X POST localhost:8080/v1/ad/impression -H 'Content-Type: application/json' \
+  -d '{"eventId":"e1","requestId":"r1","adId":"A001","placementId":"P01","deviceId":"d1","clientTs":1}'
+# → 약 3초 뒤 HTTP/1.1 503, Retry-After: 5
+docker compose start kafka
+```
 
