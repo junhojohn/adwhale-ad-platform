@@ -2,6 +2,8 @@
 
 adwhale-sdk-kotlin 리뉴얼과 함께 만드는 광고 서버 (요청 / 노출 / 클릭).
 
+> **빠른 실행·테스트는 [GUIDE.md](GUIDE.md)** — `./scripts/dev.sh up` → `./scripts/dev.sh test` → `./scripts/dev.sh down`
+
 ## 목표 구조
 
 ```
