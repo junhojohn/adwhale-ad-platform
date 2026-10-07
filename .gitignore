@@ -38,3 +38,6 @@ tmp/
 *.jks
 *.keystore
 credentials*
+
+# scripts/dev.sh 실행 시 생기는 앱 로그/PID
+.run/

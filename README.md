@@ -25,6 +25,7 @@ Dashboard ──▶ API 서버 ──▶ Redis(캐시) ──miss──▶ Prest
 - [x] 4-5. 로드밸런서(nginx): localhost:8080 → ad-api :8081 / :8082
 - [x] 5-1. MySQL 추가 + 스키마 (ad_event, ad_stats_hourly)
 - [x] 5-2. DB Consumer(`ad-db-writer` 그룹): Kafka → MySQL ad_event (배치 + INSERT IGNORE)
+- [x] 5-3. 집계 배치 `ad-batch`: 5분마다 최근 2시간 ad_event → ad_stats_hourly 덮어쓰기
 - [ ] 5. Redis
 - [ ] 6. 집계 / Presto / 대시보드
 
@@ -269,5 +270,28 @@ docker exec adwhale-kafka /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-se
 docker compose stop mysql
 ./scripts/flow.sh 5                    # API·파일 저장은 정상, DB 저장은 "재시도 N회째" 로그
 docker compose start mysql             # 재시도 중이던 배치가 저장됨
+```
+
+## 5-3단계: 집계 배치 (ad-batch)
+
+```
+ad_event (원본, 1이벤트 = 1행) ──[5분마다, 최근 2시간 GROUP BY]──▶ ad_stats_hourly (시간·광고·지면 = 1행)
+```
+
+```bash
+./gradlew :ad-batch:bootRun
+# 5초 뒤 "시간별 집계 완료: ... 부터 / 집계 행 N개" 로그, 이후 5분마다 반복
+
+docker exec -i adwhale-mysql mysql -uadwhale -padwhale -t adwhale < mysql/stats.sql   # 집계 vs 원본 비교
+```
+
+과거 데이터 전체 재집계 (예: 최근 7일 = 168시간):
+```bash
+./gradlew :ad-batch:bootRun --args='--adwhale.batch.lookback-hours=168'
+```
+
+빠르게 반복 확인하고 싶으면 주기를 30초로:
+```bash
+./gradlew :ad-batch:bootRun --args='--adwhale.batch.interval=PT30S'
 ```
 

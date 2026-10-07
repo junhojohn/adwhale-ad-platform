@@ -1,0 +1,20 @@
+spring:
+  application:
+    name: ad-batch
+  datasource:
+    url: jdbc:mysql://localhost:3306/adwhale?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+    username: adwhale
+    password: ${MYSQL_PASSWORD:adwhale}
+    hikari:
+      maximum-pool-size: 2
+      # READ COMMITTED: 집계 SELECT가 ad_event에 잠금을 걸지 않게 함
+      # (MySQL 기본값 REPEATABLE READ에서는 INSERT ... SELECT가 읽는 범위에 잠금을 걸어
+      #  같은 시간에 ad-db-writer가 넣는 INSERT를 잠깐 막을 수 있음)
+      transaction-isolation: TRANSACTION_READ_COMMITTED
+
+adwhale:
+  batch:
+    enabled: true
+    interval: PT5M        # 5분마다 (ISO-8601 기간 표기: PT5M = 5분, PT30S = 30초)
+    initial-delay: PT5S   # 시작 5초 뒤 첫 실행
+    lookback-hours: 2     # 최근 몇 시간을 다시 계산할지. 과거 데이터 재집계: --adwhale.batch.lookback-hours=168
