@@ -10,4 +10,5 @@ include(
     "ad-api",           // 광고 API 서버 (Producer)
     "ad-log-consumer",  // 로그 저장 앱 (Consumer)
     "ad-batch",         // 집계 배치 (ad_event → ad_stats_hourly)
+    "ad-db-migration",  // DB 스키마 마이그레이션 (Flyway)
 )

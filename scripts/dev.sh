@@ -4,6 +4,7 @@
 #
 #   ./scripts/dev.sh up       인프라(Docker) + 앱 4개 전부 실행
 #   ./scripts/dev.sh test     요청→노출→클릭 20회 보내고 DB·집계 결과 확인
+#   ./scripts/dev.sh migrate  DB 스키마 마이그레이션(Flyway)만 실행
 #   ./scripts/dev.sh status   지금 무엇이 떠 있는지
 #   ./scripts/dev.sh logs X   앱 로그 보기 (X = ad-api-8081 | ad-api-8082 | ad-log-consumer | ad-batch)
 #   ./scripts/dev.sh restart  코드 수정 후 앱만 다시 빌드·재시작
@@ -75,13 +76,24 @@ stop_app() {
 
 build_apps() {
   say "앱 빌드 (변경 없으면 금방 끝남)"
-  ./gradlew -q :ad-api:bootJar :ad-log-consumer:bootJar :ad-batch:bootJar || { fail "빌드 실패"; exit 1; }
+  ./gradlew -q :ad-api:bootJar :ad-log-consumer:bootJar :ad-batch:bootJar :ad-db-migration:bootJar || { fail "빌드 실패"; exit 1; }
   JAVA=$(./gradlew -q :ad-api:printJavaLauncher)
   ok "빌드 완료 / java: $JAVA"
 }
 
+run_migration() {   # 앱보다 먼저: 테이블이 준비돼 있어야 consumer/batch가 정상 동작
+  say "DB 마이그레이션 (Flyway)"
+  if ( cd "$ROOT/ad-db-migration" && "$JAVA" -jar build/libs/ad-db-migration-0.0.1-SNAPSHOT.jar ) > "$RUN/ad-db-migration.log" 2>&1; then
+    grep -E "  V|현재 스키마 버전" "$RUN/ad-db-migration.log" | sed 's/.*: /  /'
+    ok "마이그레이션 완료 (로그: .run/ad-db-migration.log)"
+  else
+    fail "마이그레이션 실패 → .run/ad-db-migration.log 확인"; tail -n 20 "$RUN/ad-db-migration.log"; exit 1
+  fi
+}
+
 start_apps() {
   build_apps
+  run_migration
   say "앱 실행"
   start_app ad-api-8081     ad-api          --server.port=8081
   start_app ad-api-8082     ad-api          --server.port=8082
@@ -169,6 +181,7 @@ cmd_down() {
 case "${1:-}" in
   up)      cmd_up ;;
   test)    cmd_test ;;
+  migrate) check_docker; build_apps; run_migration ;;
   status)  cmd_status ;;
   logs)    cmd_logs "${2:-}" ;;
   restart) cmd_restart ;;

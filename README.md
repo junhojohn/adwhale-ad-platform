@@ -28,6 +28,7 @@ Dashboard ──▶ API 서버 ──▶ Redis(캐시) ──miss──▶ Prest
 - [x] 5-1. MySQL 추가 + 스키마 (ad_event, ad_stats_hourly)
 - [x] 5-2. DB Consumer(`ad-db-writer` 그룹): Kafka → MySQL ad_event (배치 + INSERT IGNORE)
 - [x] 5-3. 집계 배치 `ad-batch`: 5분마다 최근 2시간 ad_event → ad_stats_hourly 덮어쓰기
+- [x] 5-4a-0. Flyway 도입: 스키마 변경을 버전 파일(V1, V2 ...)로 관리 (`ad-db-migration`)
 - [ ] 5. Redis
 - [ ] 6. 집계 / Presto / 대시보드
 
@@ -240,8 +241,7 @@ docker exec -it adwhale-mysql mysql -uadwhale -padwhale adwhale -e "SHOW TABLES;
 docker exec -i adwhale-mysql mysql -uadwhale -padwhale -t adwhale < mysql/practice.sql
 ```
 
-- 스키마 파일: `mysql/init/01-schema.sql` — **DB 볼륨이 비어 있을 때 한 번만** 실행됨
-- 스키마를 고친 뒤 다시 적용: `docker compose rm -sf mysql && docker volume rm adwhale_mysql-data && docker compose up -d mysql` (데이터 삭제됨)
+- 스키마는 **Flyway로 관리** (5-4a-0단계 참고): `ad-db-migration/src/main/resources/db/migration/V*.sql`
 - GUI 접속: host `localhost` / port `3306` / user `adwhale` / password `adwhale` / db `adwhale`
 
 ## 5-2단계: Kafka → MySQL
@@ -296,4 +296,25 @@ docker exec -i adwhale-mysql mysql -uadwhale -padwhale -t adwhale < mysql/stats.
 ```bash
 ./gradlew :ad-batch:bootRun --args='--adwhale.batch.interval=PT30S'
 ```
+
+## 5-4a-0단계: Flyway (DB 스키마 마이그레이션)
+
+```
+ad-db-migration/src/main/resources/db/migration/
+├── V1__init.sql                 ← ad_event, ad_stats_hourly (원래 mysql/init/01-schema.sql)
+└── V2__...sql                   ← 다음 변경은 새 파일로 추가 (적용된 파일은 수정 금지)
+```
+
+```bash
+./gradlew :ad-db-migration:bootRun      # 또는 ./scripts/dev.sh migrate
+# → 아직 안 돌린 V*.sql만 실행하고 종료. 상태 표 + "현재 스키마 버전: N" 출력
+
+# 적용 이력 확인
+docker exec -it adwhale-mysql mysql -uadwhale -padwhale adwhale \
+  -e "SELECT installed_rank, version, description, type, success, installed_on FROM flyway_schema_history;"
+```
+
+- 기존 로컬 DB(테이블은 있는데 Flyway 이력 없음): **BASELINE** 으로 "V1까지 적용됨" 표시만 함 → 데이터 유지
+- 새 DB(볼륨 삭제 후): V1부터 실제로 실행되어 테이블 생성
+- `./scripts/dev.sh up` 은 앱 시작 전에 마이그레이션을 자동 실행
 

@@ -1,10 +1,11 @@
 -- =====================================================================
--- adwhale 광고 이벤트 스키마
--- docker 볼륨(mysql-data)이 비어 있을 때 한 번만 자동 실행된다.
--- 수정 후 다시 적용하려면: docker compose rm -sf mysql && docker volume rm adwhale_mysql-data && docker compose up -d mysql
+-- V1: 최초 스키마 (원래 mysql/init/01-schema.sql)
+--
+-- Flyway 마이그레이션 규칙
+--   - 파일 이름: V{버전}__{설명}.sql  (밑줄 2개)
+--   - 한 번 적용된 파일은 절대 수정하지 않는다 → 바꿀 게 있으면 V2, V3 ... 새 파일 추가
+--   - 적용 이력은 adwhale.flyway_schema_history 테이블에 기록된다
 -- =====================================================================
-
-USE adwhale;
 
 -- ---------------------------------------------------------------------
 -- 1) ad_event : 원본 이벤트 (요청 / 노출 / 클릭)
@@ -34,6 +35,7 @@ CREATE TABLE IF NOT EXISTS ad_event (
 -- 2) ad_stats_hourly : 시간별 · 광고별 · 지면별 집계 (대시보드가 읽는 테이블)
 --    ad_event를 GROUP BY 해서 "덮어쓰기" 방식으로 채운다 (몇 번 다시 돌려도 결과 동일).
 -- ---------------------------------------------------------------------
+-- 테스트주석
 CREATE TABLE IF NOT EXISTS ad_stats_hourly (
     stat_hour     DATETIME        NOT NULL COMMENT '집계 시간 (예: 2026-10-06 15:00:00 = 15시대)',
     ad_id         VARCHAR(32)     NOT NULL,
