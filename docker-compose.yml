@@ -108,6 +108,73 @@ services:
       timeout: 5s
       retries: 20
 
+  # ── SeaweedFS (로컬 S3: 원본 이벤트 파일 저장소 = 데이터 레이크) ────────────
+  # S3와 API가 같아서, 나중에 진짜 AWS S3로 바꿀 때 접속 주소/키 설정만 바꾸면 됨
+  # (원래 MinIO를 쓰려 했으나 MinIO는 2025년 말 개발 중단 + Docker 이미지 배포 중단)
+  seaweedfs:
+    image: chrislusf/seaweedfs:latest
+    container_name: adwhale-seaweedfs
+    # master + volume + filer + S3 게이트웨이를 한 컨테이너에서 실행 (로컬 연습용 단일 노드)
+    command: >
+      server -dir=/data
+      -ip=seaweedfs -ip.bind=0.0.0.0
+      -master.volumeSizeLimitMB=1024
+      -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json
+    ports:
+      - "8333:8333"   # S3 API  (앱/Trino/aws cli가 접속하는 주소)
+      - "8888:8888"   # Filer 웹 UI (브라우저로 버킷 안 파일 보기: /buckets/adwhale-lake/)
+    volumes:
+      - seaweedfs-data:/data
+      - ./seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro   # S3 접속 키 (로컬 개발용)
+    # healthcheck 없음: 이미지 안에 확인용 도구(curl 등)가 일정하지 않음
+    # → 대신 s3-init이 S3 API에 실제로 접속될 때까지 재시도하며 기다림
+
+  # 버킷 생성 (kafka-init처럼 한 번 실행하고 종료)
+  # 진짜 AWS에서 쓰는 aws cli 그대로 → endpoint만 로컬로 바꿔서 사용
+  s3-init:
+    image: amazon/aws-cli:latest
+    container_name: adwhale-s3-init
+    depends_on:
+      seaweedfs:
+        condition: service_started
+    environment:
+      AWS_ACCESS_KEY_ID: adwhale
+      AWS_SECRET_ACCESS_KEY: adwhale-secret
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        S3="aws --endpoint-url http://seaweedfs:8333 s3"
+        for i in $$(seq 1 60); do $$S3 ls >/dev/null 2>&1 && break; echo "S3 대기 중... $$i"; sleep 2; done
+        $$S3 ls >/dev/null || { echo "S3 접속 실패 → docker compose logs seaweedfs 확인"; exit 1; }
+        aws --endpoint-url http://seaweedfs:8333 s3api head-bucket --bucket adwhale-lake 2>/dev/null || $$S3 mb s3://adwhale-lake
+        $$S3 ls
+    restart: "no"
+
+  # ── Trino (분산 SQL 엔진: S3의 파일을 SQL로 조회 / MySQL도 같이 조회 가능) ──────
+  trino:
+    image: trinodb/trino:476
+    container_name: adwhale-trino
+    ports:
+      - "8085:8080"   # Trino 웹 UI + JDBC (8080은 로드밸런서가 사용 중이라 8085로)
+    environment:
+      # catalog/*.properties 안의 ${ENV:...} 에 들어감 → 키를 설정 파일에 직접 쓰지 않음
+      S3_ACCESS_KEY: adwhale
+      S3_SECRET_KEY: adwhale-secret
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-adwhale}
+    volumes:
+      - ./trino/catalog:/etc/trino/catalog:ro
+    depends_on:
+      s3-init:
+        condition: service_completed_successfully
+      mysql:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 2g   # Mac 메모리 보호 (Trino는 JVM이라 기본으로 메모리를 많이 잡음)
+
 volumes:
   kafka-data:
   mysql-data:
+  seaweedfs-data:

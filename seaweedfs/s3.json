@@ -1,0 +1,11 @@
+{
+  "identities": [
+    {
+      "name": "adwhale",
+      "credentials": [
+        { "accessKey": "adwhale", "secretKey": "adwhale-secret" }
+      ],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}
