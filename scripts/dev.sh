@@ -6,7 +6,7 @@
 #   ./scripts/dev.sh test     요청→노출→클릭 20회 보내고 DB·집계 결과 확인
 #   ./scripts/dev.sh migrate  DB 스키마 마이그레이션(Flyway)만 실행
 #   ./scripts/dev.sh status   지금 무엇이 떠 있는지
-#   ./scripts/dev.sh logs X   앱 로그 보기 (X = ad-api-8081 | ad-api-8082 | ad-log-consumer | ad-batch)
+#   ./scripts/dev.sh logs X   앱 로그 보기 (X = ad-api-8081 | ad-api-8082 | ad-log-consumer | ad-batch | ad-dashboard-api)
 #   ./scripts/dev.sh restart  코드 수정 후 앱만 다시 빌드·재시작
 #   ./scripts/dev.sh down     앱 종료 + Docker 컨테이너 정지 (데이터는 유지)
 #
@@ -17,7 +17,7 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 RUN="$ROOT/.run"
 MYSQL_PW="${MYSQL_PASSWORD:-adwhale}"
-APPS="ad-api-8081 ad-api-8082 ad-log-consumer ad-batch"
+APPS="ad-api-8081 ad-api-8082 ad-log-consumer ad-batch ad-dashboard-api"
 mkdir -p "$RUN"
 cd "$ROOT"
 
@@ -76,7 +76,7 @@ stop_app() {
 
 build_apps() {
   say "앱 빌드 (변경 없으면 금방 끝남)"
-  ./gradlew -q :ad-api:bootJar :ad-log-consumer:bootJar :ad-batch:bootJar :ad-db-migration:bootJar || { fail "빌드 실패"; exit 1; }
+  ./gradlew -q :ad-api:bootJar :ad-log-consumer:bootJar :ad-batch:bootJar :ad-db-migration:bootJar :ad-dashboard-api:bootJar || { fail "빌드 실패"; exit 1; }
   JAVA=$(./gradlew -q :ad-api:printJavaLauncher)
   ok "빌드 완료 / java: $JAVA"
 }
@@ -92,6 +92,8 @@ run_migration() {   # 앱보다 먼저: 테이블이 준비돼 있어야 consume
 }
 
 start_apps() {
+  stop_apps        # 실행 중인 jar를 덮어쓰지 않도록 "먼저 끄고 → 빌드 → 실행"
+  check_ports
   build_apps
   run_migration
   say "앱 실행"
@@ -99,17 +101,46 @@ start_apps() {
   start_app ad-api-8082     ad-api          --server.port=8082
   start_app ad-log-consumer ad-log-consumer
   start_app ad-batch        ad-batch        --adwhale.batch.interval=PT30S   # 테스트 편하게 30초 주기
+  start_app ad-dashboard-api ad-dashboard-api
 
   say "ad-api 준비 대기"
   for port in 8081 8082; do
     if wait_http "localhost:$port/actuator/health" 60; then ok "ad-api :$port UP"
     else fail "ad-api :$port 응답 없음 → ./scripts/dev.sh logs ad-api-$port"; fi
   done
+  if wait_http "localhost:8090/actuator/health" 60; then ok "ad-dashboard-api :8090 UP"
+  else fail "ad-dashboard-api :8090 응답 없음 → ./scripts/dev.sh logs ad-dashboard-api"; fi
 }
 
 stop_apps() {
   say "앱 종료"
   for a in $APPS; do stop_app "$a"; done
+  kill_strays
+}
+
+# dev.sh가 모르는 "떠돌이" 프로세스 정리 (run-api.sh / 직접 java -jar 로 띄운 것, 이전 실행에서 남은 것)
+# → 이게 포트를 잡고 있으면 새 앱이 "Port already in use"로 못 뜨고,
+#   jar를 다시 빌드하면 옛 프로세스가 사라진 클래스를 찾다가 빈 응답(ERR_EMPTY_RESPONSE)을 냄
+kill_strays() {
+  local pids
+  pids=$(pgrep -f 'build/libs/ad-[a-z-]+-0\.0\.1-SNAPSHOT\.jar' || true)
+  if [[ -n "$pids" ]]; then
+    warn "이전에 띄운 앱 프로세스 정리: $(echo $pids)"
+    kill $pids 2>/dev/null || true
+    sleep 3
+    pids=$(pgrep -f 'build/libs/ad-[a-z-]+-0\.0\.1-SNAPSHOT\.jar' || true)
+    [[ -n "$pids" ]] && kill -9 $pids 2>/dev/null || true
+  fi
+}
+
+# 포트를 다른 프로그램(IntelliJ에서 실행한 앱 등)이 쓰고 있으면 시작 전에 알려줌
+check_ports() {
+  local busy=0 port info
+  for port in 8081 8082 8090; do
+    info=$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1" (pid "$2")"}')
+    if [[ -n "$info" ]]; then fail "포트 $port 사용 중: $info → 종료 후 다시 실행 (IntelliJ에서 띄운 앱이면 IntelliJ에서 Stop)"; busy=1; fi
+  done
+  (( busy == 0 )) || exit 1
 }
 
 # ── 명령 ─────────────────────────────────────────────────────────────
@@ -136,7 +167,7 @@ cmd_status() {
     curl -s -m 2 localhost:8080/ping && echo || fail "localhost:8080 응답 없음"
   done
   say "주소"
-  echo "  API(로드밸런서) http://localhost:8080   Kafka UI http://localhost:8989   MySQL localhost:3306 (adwhale/$MYSQL_PW)"
+  echo "  API(로드밸런서) http://localhost:8080   대시보드 http://localhost:8090   Kafka UI http://localhost:8989   MySQL localhost:3306 (adwhale/$MYSQL_PW)"
 }
 
 cmd_test() {
@@ -156,6 +187,18 @@ cmd_test() {
            ROUND(clicks / NULLIF(impressions, 0) * 100, 2) AS ctr_pct, updated_at
     FROM ad_stats_hourly ORDER BY stat_hour DESC LIMIT 5;"
 
+  say "지면별 필레이트 (placement_stats_hourly)"
+  docker exec -i adwhale-mysql mysql -uadwhale -p"$MYSQL_PW" -t adwhale 2>/dev/null -e "
+    SELECT stat_hour, placement_id, requests, filled,
+           ROUND(filled / NULLIF(requests, 0) * 100, 2) AS fill_rate_pct
+    FROM placement_stats_hourly ORDER BY stat_hour DESC, placement_id LIMIT 4;"
+
+  say "대시보드 API: 오늘 summary"
+  curl -s "localhost:8090/v1/stats/summary?from=$(date +%F)&to=$(date +%F)" | python3 -m json.tool --no-ensure-ascii 2>/dev/null \
+    || warn "ad-dashboard-api 응답 없음"
+  echo "  전체 API 확인: ./scripts/dashboard-test.sh"
+  echo "  대시보드 화면: http://localhost:8090"
+
   say "로그 파일 (ad-log-consumer/logs)"
   ls -1 ad-log-consumer/logs/*/ 2>/dev/null | tail -n 6
   echo
@@ -170,7 +213,7 @@ cmd_logs() {
   tail -n 50 -f "$RUN/$name.log"
 }
 
-cmd_restart() { stop_apps; check_docker; start_apps; }
+cmd_restart() { check_docker; start_apps; }
 
 cmd_down() {
   stop_apps

@@ -77,6 +77,7 @@ SDK(flow.sh)              │                                                   
 | `ad-log-consumer` | Kafka → 로그 파일(`ad-log-writer`) + MySQL(`ad-db-writer`) | - |
 | `ad-batch` | `ad_event` → `ad_stats_hourly` 집계 | - |
 | `ad-db-migration` | Flyway로 DB 스키마 적용 후 종료 (스키마의 주인) | - |
+| `ad-dashboard-api` | 대시보드 **화면** + 통계 조회 API (`docs/dashboard-spec.md`) → **http://localhost:8090** | 8090 |
 
 ### Docker 컨테이너 (`docker-compose.yml`)
 

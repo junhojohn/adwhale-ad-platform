@@ -29,6 +29,9 @@ Dashboard ──▶ API 서버 ──▶ Redis(캐시) ──miss──▶ Prest
 - [x] 5-2. DB Consumer(`ad-db-writer` 그룹): Kafka → MySQL ad_event (배치 + INSERT IGNORE)
 - [x] 5-3. 집계 배치 `ad-batch`: 5분마다 최근 2시간 ad_event → ad_stats_hourly 덮어쓰기
 - [x] 5-4a-0. Flyway 도입: 스키마 변경을 버전 파일(V1, V2 ...)로 관리 (`ad-db-migration`)
+- [x] 5-4a. 노필(10%, 204) + `placement_stats_hourly`(V2) + 지면별 집계 → 필레이트
+- [x] 5-4b. `ad-dashboard-api`(:8090) 통계 API 4개 (스펙: `docs/dashboard-spec.md`)
+- [x] 5-6. 대시보드 화면 http://localhost:8090 (HTML 1장 + Chart.js)
 - [ ] 5. Redis
 - [ ] 6. 집계 / Presto / 대시보드
 
@@ -317,4 +320,54 @@ docker exec -it adwhale-mysql mysql -uadwhale -padwhale adwhale \
 - 기존 로컬 DB(테이블은 있는데 Flyway 이력 없음): **BASELINE** 으로 "V1까지 적용됨" 표시만 함 → 데이터 유지
 - 새 DB(볼륨 삭제 후): V1부터 실제로 실행되어 테이블 생성
 - `./scripts/dev.sh up` 은 앱 시작 전에 마이그레이션을 자동 실행
+
+## 5-4a단계: 노필 + 지면별 집계 (필레이트)
+
+```
+ad-api ── 90%: 200 + 광고(A001/A002) ──┐
+       └─ 10%: 204 노필 (adId=null) ───┴─▶ ad-request ─▶ ad_event
+                                                         │ ad-batch
+                         ┌───────────────────────────────┴────────────────────┐
+                         ▼                                                    ▼
+          ad_stats_hourly (시간×광고×지면)                placement_stats_hourly (시간×지면, V2)
+          요청(광고 응답분)·노출·클릭                      전체 요청·광고 응답 요청 → 필레이트
+```
+
+```bash
+./scripts/dev.sh migrate          # V2__add_placement_stats.sql 적용 (현재 스키마 버전: 2)
+./scripts/dev.sh restart          # ad-api / ad-batch 새 코드로 재시작
+./scripts/flow.sh 20              # "노필(204)" 줄이 약 10% 보임
+docker exec -i adwhale-mysql mysql -uadwhale -padwhale -t adwhale < mysql/stats.sql   # 3) 필레이트 ≈ 90%
+```
+
+## 5-4b단계: 대시보드 통계 API (ad-dashboard-api :8090)
+
+| API | 용도 (스펙 4번 화면) |
+|---|---|
+| `GET /v1/stats/filters` | A. 필터 선택지 (광고·지면 목록) |
+| `GET /v1/stats/summary?from&to[&adId][&placementId]` | B. KPI 카드 |
+| `GET /v1/stats/timeseries?from&to&granularity=hour\|day[...]` | C. 추이 차트 (빈 구간 0 채움) |
+| `GET /v1/stats/breakdown?from&to&by=ad\|placement\|ad_placement[...]` | D. 상세 테이블 |
+
+```bash
+./scripts/dashboard-test.sh       # API 4개 + 에러 케이스(400) 한 번에 호출
+./scripts/dashboard-test.sh A001  # 광고 필터 → totalRequests/fillRate 가 null
+```
+
+## 5-6단계: 대시보드 화면
+
+```
+http://localhost:8090      ← ad-dashboard-api가 화면(static/index.html)과 API를 같이 제공 (CORS 불필요)
+```
+
+| 영역 | 내용 |
+|---|---|
+| A. 필터 | 오늘 / 어제 / 최근 7일 / 직접 선택, 광고·지면 선택 |
+| B. KPI | 전체 요청, 필레이트, 노출, 클릭, CTR, 노출률 (광고 필터 시 요청·필레이트는 "-") |
+| C. 추이 | 노출·클릭(막대), CTR·필레이트(선) — 지표마다 별도 차트. 1일 = 시간별, 2일 이상 = 일별 |
+| D. 상세 | 광고 × 지면 / 광고 / 지면 기준 표, 컬럼 클릭으로 정렬 |
+
+- Chart.js를 CDN에서 불러오므로 인터넷 연결 필요
+- 다크 모드: Mac 시스템 설정을 따라감
+- 화면만 고쳤을 때: `./scripts/dev.sh restart` (static 파일도 jar에 포함되므로 다시 빌드)
 
