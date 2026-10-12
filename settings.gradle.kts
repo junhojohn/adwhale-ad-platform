@@ -11,4 +11,5 @@ include(
     "ad-log-consumer",  // 로그 저장 앱 (Consumer)
     "ad-batch",         // 집계 배치 (ad_event → ad_stats_hourly)
     "ad-db-migration",  // DB 스키마 마이그레이션 (Flyway)
+    "ad-dashboard-api", // 대시보드용 통계 조회 API (:8090)
 )
