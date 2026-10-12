@@ -19,3 +19,10 @@ WHERE ad_id IS NOT NULL
 GROUP BY 1, ad_id, placement_id
 ORDER BY 1 DESC, ad_id, placement_id
 LIMIT 20;
+
+-- 3) 지면별 필레이트 (5-4a)
+SELECT stat_hour, placement_id, requests, filled,
+       ROUND(filled / NULLIF(requests, 0) * 100, 2) AS fill_rate_percent, updated_at
+FROM placement_stats_hourly
+ORDER BY stat_hour DESC, placement_id
+LIMIT 20;

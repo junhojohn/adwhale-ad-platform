@@ -14,6 +14,9 @@ import java.time.temporal.ChronoUnit;
 /**
  * 시간별 집계 배치
  *
+ *   ad_event ─┬─▶ ad_stats_hourly        (시간 × 광고 × 지면: 요청·노출·클릭)
+ *             └─▶ placement_stats_hourly (시간 × 지면: 전체 요청·광고 응답 요청 → 필레이트)
+ *
  * 5분마다 "최근 N시간"(기본 2시간 = 이전 시간대 + 현재 시간대)을 ad_event에서 다시 계산해서
  * ad_stats_hourly에 덮어쓴다.
  *
@@ -56,8 +59,31 @@ public class HourlyStatsJob {
                                     clicks      = clk
             """;
 
+    /**
+     * 지면별 집계 (필레이트용) — request 이벤트만, 노필(ad_id NULL)도 포함
+     * SUM(ad_id IS NOT NULL): 광고가 응답된 요청 수 (조건식이 참이면 1, 거짓이면 0)
+     */
+    private static final String PLACEMENT_UPSERT_SQL = """
+            INSERT INTO placement_stats_hourly (stat_hour, placement_id, requests, filled)
+            SELECT * FROM (
+                SELECT DATE_FORMAT(server_ts, '%Y-%m-%d %H:00:00') AS h,
+                       placement_id                                AS p,
+                       COUNT(*)                                    AS req,
+                       SUM(ad_id IS NOT NULL)                      AS fil
+                FROM ad_event
+                WHERE server_ts >= ?
+                  AND event_type = 'request'
+                GROUP BY h, p
+            ) AS agg
+            ON DUPLICATE KEY UPDATE requests = req,
+                                    filled   = fil
+            """;
+
     private static final String COUNT_SQL =
             "SELECT COUNT(*) FROM ad_stats_hourly WHERE stat_hour >= ?";
+
+    private static final String PLACEMENT_COUNT_SQL =
+            "SELECT COUNT(*) FROM placement_stats_hourly WHERE stat_hour >= ?";
 
     private final JdbcTemplate jdbc;
     private final int lookbackHours;
@@ -80,9 +106,11 @@ public class HourlyStatsJob {
 
         try {
             jdbc.update(UPSERT_SQL, from);
+            jdbc.update(PLACEMENT_UPSERT_SQL, from);
             Integer rows = jdbc.queryForObject(COUNT_SQL, Integer.class, from);
-            log.info("시간별 집계 완료: {} 부터 / 집계 행 {}개 / {}ms",
-                    from, rows, System.currentTimeMillis() - start);
+            Integer placementRows = jdbc.queryForObject(PLACEMENT_COUNT_SQL, Integer.class, from);
+            log.info("시간별 집계 완료: {} 부터 / 광고별 {}행, 지면별 {}행 / {}ms",
+                    from, rows, placementRows, System.currentTimeMillis() - start);
         } catch (Exception e) {
             // 실패해도 다음 주기에 같은 구간을 다시 계산하므로 데이터가 틀어지지 않음
             log.error("시간별 집계 실패 ({} 부터): {}", from, e.getMessage());

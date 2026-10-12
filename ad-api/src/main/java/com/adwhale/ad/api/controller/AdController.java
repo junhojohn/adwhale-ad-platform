@@ -28,9 +28,15 @@ public class AdController {
         this.adService = adService;
     }
 
+    /**
+     * 광고 있음 → 200 + 광고 정보
+     * 노필     → 204 No Content (본문 없음). 광고 업계에서 "보여줄 광고 없음"을 알리는 일반적인 방식
+     */
     @PostMapping("/request")
-    public AdResponse request(@Valid @RequestBody AdRequestBody body) {
-        return adService.serve(body);
+    public ResponseEntity<AdResponse> request(@Valid @RequestBody AdRequestBody body) {
+        return adService.serve(body)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.noContent().build());
     }
 
     @PostMapping("/impression")
