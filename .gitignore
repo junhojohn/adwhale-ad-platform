@@ -41,3 +41,6 @@ credentials*
 
 # scripts/dev.sh 실행 시 생기는 앱 로그/PID
 .run/
+
+# Office 문서를 열어둘 때 생기는 임시 잠금 파일 (예: ~$애드웨일 서버.pptx)
+~$*
