@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>adwhale 광고 통계</title>
+<!-- 차트 라이브러리 (인터넷 필요). 스펙: docs/dashboard-spec.md 4번 화면 구성 -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-0: #f4f4f2;      /* 페이지 배경 */
+    --surface-1: #fcfcfb;      /* 카드/차트 배경 */
+    --border: #e4e3df;
+    --grid: #ecebe7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #85847f;
+    --series-1: #2a78d6;       /* 단일 시리즈 색 (categorical slot 1) */
+    --accent: #2a78d6;
+    --critical: #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --surface-0: #121211; --surface-1: #1a1a19; --border: #2e2e2c; --grid: #2a2a28;
+      --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
+      --series-1: #3987e5; --accent: #3987e5; --critical: #e66767;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-0: #121211; --surface-1: #1a1a19; --border: #2e2e2c; --grid: #2a2a28;
+    --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
+    --series-1: #3987e5; --accent: #3987e5; --critical: #e66767;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--surface-0); color: var(--text-primary);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", system-ui, sans-serif;
+  }
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 20px 16px 48px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  h1 { font-size: 20px; margin: 0; }
+  .updated { color: var(--text-muted); font-size: 12px; }
+  .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+
+  /* A. 필터 (한 줄) */
+  .filters { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin: 16px 0; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; background: transparent; color: var(--text-secondary); padding: 6px 12px; cursor: pointer; font: inherit; }
+  .seg button + button { border-left: 1px solid var(--border); }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+  label { color: var(--text-secondary); font-size: 13px; display: inline-flex; gap: 6px; align-items: center; }
+  select, input[type=date] {
+    font: inherit; color: var(--text-primary); background: var(--surface-1);
+    border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px;
+  }
+  .btn { font: inherit; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary);
+         border-radius: 6px; padding: 5px 12px; cursor: pointer; }
+  .custom-range { display: none; gap: 6px; align-items: center; }
+  .custom-range.on { display: inline-flex; }
+
+  /* B. KPI 카드 */
+  .kpis { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; }
+  .kpi .name { color: var(--text-secondary); font-size: 12px; }
+  .kpi .value { font-size: 24px; font-weight: 650; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .kpi .note { color: var(--text-muted); font-size: 11px; min-height: 16px; }
+
+  /* C. 추이 차트 (작은 차트 여러 개: 지표마다 축이 하나) */
+  h2 { font-size: 15px; margin: 24px 0 8px; display: flex; gap: 8px; align-items: baseline; }
+  h2 small { color: var(--text-muted); font-weight: 400; font-size: 12px; }
+  .charts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .chart-title { font-size: 13px; color: var(--text-secondary); margin-bottom: 6px; }
+  .chart-box { position: relative; height: 200px; }
+  .chart-empty { position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+                 color: var(--text-muted); font-size: 13px; }
+
+  /* D. 상세 테이블 */
+  .table-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th { color: var(--text-secondary); font-weight: 500; font-size: 12px; text-align: right; cursor: pointer; user-select: none; }
+  th:first-child, th:nth-child(2), td:first-child, td:nth-child(2) { text-align: left; }
+  td { text-align: right; }
+  th .arrow { color: var(--text-muted); }
+  tbody tr:hover { background: var(--surface-0); }
+
+  .error { display: none; margin: 12px 0; padding: 10px 14px; border-radius: 8px;
+           border: 1px solid var(--critical); color: var(--critical); }
+  .error.on { display: block; }
+
+  @media (max-width: 900px) { .kpis { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 640px) {
+    .kpis { grid-template-columns: repeat(2, 1fr); }
+    .charts { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>adwhale 광고 통계</h1>
+    <span class="updated" id="updated">데이터 기준: -</span>
+  </header>
+
+  <!-- A. 필터 -->
+  <div class="filters">
+    <div class="seg" id="presets" role="group" aria-label="기간">
+      <button data-preset="today" aria-pressed="true">오늘</button>
+      <button data-preset="yesterday" aria-pressed="false">어제</button>
+      <button data-preset="7d" aria-pressed="false">최근 7일</button>
+      <button data-preset="custom" aria-pressed="false">직접 선택</button>
+    </div>
+    <span class="custom-range" id="customRange">
+      <input type="date" id="from"> ~ <input type="date" id="to">
+      <button class="btn" id="applyRange">적용</button>
+    </span>
+    <label>광고 <select id="adId"><option value="">전체</option></select></label>
+    <label>지면 <select id="placementId"><option value="">전체</option></select></label>
+    <button class="btn" id="refresh">새로고침</button>
+  </div>
+
+  <div class="error" id="error"></div>
+
+  <!-- B. KPI 카드 -->
+  <div class="kpis">
+    <div class="card kpi"><div class="name">전체 요청</div><div class="value" id="k-total">-</div><div class="note" id="n-total"></div></div>
+    <div class="card kpi"><div class="name">필레이트</div><div class="value" id="k-fill">-</div><div class="note" id="n-fill"></div></div>
+    <div class="card kpi"><div class="name">노출</div><div class="value" id="k-imp">-</div><div class="note"></div></div>
+    <div class="card kpi"><div class="name">클릭</div><div class="value" id="k-clk">-</div><div class="note"></div></div>
+    <div class="card kpi"><div class="name">CTR</div><div class="value" id="k-ctr">-</div><div class="note">클릭 ÷ 노출</div></div>
+    <div class="card kpi"><div class="name">노출률</div><div class="value" id="k-imprate">-</div><div class="note">노출 ÷ 광고 응답 요청</div></div>
+  </div>
+
+  <!-- C. 추이 차트 -->
+  <h2>추이 <small id="granularityLabel"></small></h2>
+  <div class="charts">
+    <div class="card"><div class="chart-title">노출</div><div class="chart-box"><canvas id="c-imp"></canvas><div class="chart-empty">데이터 없음</div></div></div>
+    <div class="card"><div class="chart-title">클릭</div><div class="chart-box"><canvas id="c-clk"></canvas><div class="chart-empty">데이터 없음</div></div></div>
+    <div class="card"><div class="chart-title">CTR (%)</div><div class="chart-box"><canvas id="c-ctr"></canvas><div class="chart-empty">데이터 없음</div></div></div>
+    <div class="card"><div class="chart-title">필레이트 (%)</div><div class="chart-box"><canvas id="c-fill"></canvas><div class="chart-empty" id="fillEmpty">데이터 없음</div></div></div>
+  </div>
+
+  <!-- D. 상세 테이블 -->
+  <div class="table-head">
+    <h2>상세</h2>
+    <div class="seg" id="byGroup" role="group" aria-label="기준">
+      <button data-by="ad_placement" aria-pressed="true">광고 × 지면</button>
+      <button data-by="ad" aria-pressed="false">광고</button>
+      <button data-by="placement" aria-pressed="false">지면</button>
+    </div>
+  </div>
+  <div class="card table-wrap">
+    <table>
+      <thead><tr id="thead"></tr></thead>
+      <tbody id="tbody"><tr><td colspan="9" style="text-align:center;color:var(--text-muted)">불러오는 중…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+// ── 상태 ──────────────────────────────────────────────────────────────
+const state = { preset: 'today', from: null, to: null, adId: '', placementId: '', by: 'ad_placement',
+                sortKey: 'impressions', sortDesc: true, rows: [] };
+const charts = {};
+
+// ── 유틸 ──────────────────────────────────────────────────────────────
+const $ = (id) => document.getElementById(id);
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const fmtNum = (v) => v == null ? '-' : Number(v).toLocaleString('ko-KR');
+const fmtPct = (v) => v == null ? '-' : v.toFixed(2) + '%';
+const pad = (n) => String(n).padStart(2, '0');
+const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;   // 브라우저 로컬(KST) 기준
+const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+const daysBetween = (from, to) => Math.round((new Date(to) - new Date(from)) / 86400000) + 1;
+
+function rangeOf(preset) {
+  const today = new Date();
+  switch (preset) {
+    case 'today':     return [ymd(today), ymd(today)];
+    case 'yesterday': return [ymd(addDays(today, -1)), ymd(addDays(today, -1))];
+    case '7d':        return [ymd(addDays(today, -6)), ymd(today)];
+    default:          return [$('from').value, $('to').value];
+  }
+}
+
+async function api(path, params) {
+  const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== '' && v != null));
+  const res = await fetch(`/v1/stats/${path}?${qs}`);
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.message || `HTTP ${res.status}`);
+  return body;
+}
+
+function showError(msg) { const e = $('error'); e.textContent = msg; e.classList.toggle('on', !!msg); }
+
+// ── 필터 선택지 ────────────────────────────────────────────────────────
+async function loadFilters() {
+  const f = await api('filters', {});
+  for (const [selId, values] of [['adId', f.adIds], ['placementId', f.placementIds]]) {
+    const sel = $(selId), cur = sel.value;
+    sel.innerHTML = '<option value="">전체</option>' + values.map(v => `<option>${v}</option>`).join('');
+    sel.value = values.includes(cur) ? cur : '';
+  }
+}
+
+// ── 전체 갱신 ──────────────────────────────────────────────────────────
+async function refresh() {
+  const [from, to] = rangeOf(state.preset);
+  if (!from || !to) { showError('기간을 선택하세요'); return; }
+  state.from = from; state.to = to;
+  // 스펙: 1일이면 시간별, 2일 이상이면 일별
+  const granularity = daysBetween(from, to) <= 1 ? 'hour' : 'day';
+  const common = { from, to, adId: state.adId, placementId: state.placementId };
+
+  try {
+    showError('');
+    const [summary, series, breakdown] = await Promise.all([
+      api('summary', common),
+      api('timeseries', { ...common, granularity }),
+      api('breakdown', { ...common, by: state.by }),
+    ]);
+    renderSummary(summary);
+    renderCharts(series);
+    state.rows = breakdown.rows;
+    renderTable();
+  } catch (e) {
+    showError('조회 실패: ' + e.message);
+  }
+}
+
+// ── B. KPI ────────────────────────────────────────────────────────────
+function renderSummary(s) {
+  const adFiltered = !!state.adId;
+  $('k-total').textContent = fmtNum(s.totalRequests);
+  $('k-fill').textContent = fmtPct(s.fillRate);
+  $('n-total').textContent = adFiltered ? '광고 필터 시 집계 안 함' : '노필 포함';
+  $('n-fill').textContent = adFiltered ? '광고 필터 시 집계 안 함' : '광고 응답 ÷ 전체 요청';
+  $('k-imp').textContent = fmtNum(s.impressions);
+  $('k-clk').textContent = fmtNum(s.clicks);
+  $('k-ctr').textContent = fmtPct(s.ctr);
+  $('k-imprate').textContent = fmtPct(s.impressionRate);
+  $('updated').textContent = '데이터 기준: ' + (s.dataUpdatedAt ? s.dataUpdatedAt.replace('T', ' ').slice(0, 16) : '-') + ' (최대 약 5분 지연)';
+}
+
+// ── C. 추이 차트: 지표마다 별도 차트 (한 차트에 축 두 개를 쓰지 않음) ─────────
+function labelOf(time, granularity, multiDay) {
+  const [d, t] = time.split('T');
+  const [, m, day] = d.split('-');
+  if (granularity === 'day') return `${m}/${day}`;
+  return (multiDay ? `${m}/${day} ` : '') + `${t.slice(0, 2)}시`;
+}
+
+function renderCharts(series) {
+  const g = series.granularity;
+  $('granularityLabel').textContent = g === 'hour' ? '시간별' : '일별';
+  const multiDay = state.from !== state.to;
+  const labels = series.points.map(p => labelOf(p.time, g, multiDay));
+  const pick = (k) => series.points.map(p => p[k]);
+
+  drawChart('c-imp', 'bar', labels, pick('impressions'), (v) => fmtNum(v));
+  drawChart('c-clk', 'bar', labels, pick('clicks'), (v) => fmtNum(v));
+  drawChart('c-ctr', 'line', labels, pick('ctr'), (v) => fmtPct(v));
+  if (state.adId) {
+    drawChart('c-fill', 'line', labels, labels.map(() => null), fmtPct);
+    $('fillEmpty').textContent = '광고 필터 시 필레이트는 집계하지 않아요';
+  } else {
+    $('fillEmpty').textContent = '데이터 없음';
+    drawChart('c-fill', 'line', labels, pick('fillRate'), (v) => fmtPct(v));
+  }
+}
+
+function drawChart(id, type, labels, data, fmt) {
+  const canvas = $(id);
+  const empty = canvas.parentElement.querySelector('.chart-empty');
+  const hasData = data.some(v => v != null && v !== 0);
+  empty.style.display = hasData ? 'none' : 'flex';
+  if (charts[id]) charts[id].destroy();
+
+  const color = css('--series-1');
+  charts[id] = new Chart(canvas, {
+    type,
+    data: { labels, datasets: [{
+      data,
+      backgroundColor: color, borderColor: color,
+      borderWidth: type === 'line' ? 2 : 0,
+      borderRadius: type === 'bar' ? { topLeft: 4, topRight: 4 } : 0,   // 막대 끝만 둥글게
+      borderSkipped: 'start',
+      maxBarThickness: 18,
+      pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 12,
+      spanGaps: false, tension: 0,
+    }]},
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      interaction: { mode: 'index', intersect: false },   // 마우스를 올린 x 위치의 값 표시
+      plugins: {
+        legend: { display: false },                        // 시리즈 1개 → 제목이 이름 역할
+        tooltip: { callbacks: { label: (c) => ' ' + fmt(c.parsed.y) } },
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: css('--text-muted'), maxRotation: 0, autoSkip: true, maxTicksLimit: 12 } },
+        y: { beginAtZero: true, grid: { color: css('--grid') }, border: { display: false },
+             ticks: { color: css('--text-muted'), maxTicksLimit: 5, callback: (v) => type === 'line' ? v + '%' : fmtNum(v) } },
+      },
+    },
+  });
+}
+
+// ── D. 상세 테이블 ────────────────────────────────────────────────────
+function columns() {
+  const cols = [];
+  if (state.by !== 'placement') cols.push({ key: 'adId', name: '광고', fmt: (v) => v ?? '-' });
+  if (state.by !== 'ad') cols.push({ key: 'placementId', name: '지면', fmt: (v) => v ?? '-' });
+  if (state.by === 'placement' && !state.adId) {
+    cols.push({ key: 'totalRequests', name: '전체 요청', fmt: fmtNum }, { key: 'fillRate', name: '필레이트', fmt: fmtPct });
+  }
+  cols.push(
+    { key: 'requests', name: '광고 응답 요청', fmt: fmtNum },
+    { key: 'impressions', name: '노출', fmt: fmtNum },
+    { key: 'clicks', name: '클릭', fmt: fmtNum },
+    { key: 'ctr', name: 'CTR', fmt: fmtPct },
+    { key: 'impressionRate', name: '노출률', fmt: fmtPct },
+  );
+  return cols;
+}
+
+function renderTable() {
+  const cols = columns();
+  if (!cols.some(c => c.key === state.sortKey)) { state.sortKey = 'impressions'; state.sortDesc = true; }
+
+  $('thead').innerHTML = cols.map(c => {
+    const arrow = c.key === state.sortKey ? (state.sortDesc ? ' ▼' : ' ▲') : '';
+    return `<th data-key="${c.key}">${c.name}<span class="arrow">${arrow}</span></th>`;
+  }).join('');
+
+  const rows = [...state.rows].sort((a, b) => {
+    const x = a[state.sortKey], y = b[state.sortKey];
+    if (x == null) return 1; if (y == null) return -1;
+    const r = typeof x === 'string' ? x.localeCompare(y) : x - y;
+    return state.sortDesc ? -r : r;
+  });
+
+  $('tbody').innerHTML = rows.length
+    ? rows.map(r => '<tr>' + cols.map(c => `<td>${c.fmt(r[c.key])}</td>`).join('') + '</tr>').join('')
+    : `<tr><td colspan="${cols.length}" style="text-align:center;color:var(--text-muted)">데이터 없음</td></tr>`;
+}
+
+// ── 이벤트 ────────────────────────────────────────────────────────────
+function press(groupId, attr, value) {
+  for (const b of $(groupId).querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset[attr] === value));
+}
+
+$('presets').addEventListener('click', (e) => {
+  const p = e.target.dataset.preset; if (!p) return;
+  state.preset = p; press('presets', 'preset', p);
+  $('customRange').classList.toggle('on', p === 'custom');
+  if (p === 'custom') {
+    const [f, t] = [state.from, state.to];
+    $('from').value = f; $('to').value = t;
+  } else refresh();
+});
+$('applyRange').addEventListener('click', refresh);
+$('adId').addEventListener('change', (e) => { state.adId = e.target.value; refresh(); });
+$('placementId').addEventListener('change', (e) => { state.placementId = e.target.value; refresh(); });
+$('refresh').addEventListener('click', async () => { await loadFilters().catch(() => {}); refresh(); });
+$('byGroup').addEventListener('click', (e) => {
+  const by = e.target.dataset.by; if (!by) return;
+  state.by = by; press('byGroup', 'by', by); refresh();
+});
+$('thead').addEventListener('click', (e) => {
+  const th = e.target.closest('th'); if (!th) return;
+  const key = th.dataset.key;
+  state.sortDesc = state.sortKey === key ? !state.sortDesc : true;
+  state.sortKey = key; renderTable();
+});
+// 다크모드 전환 시 차트 색 다시 칠하기
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', refresh);
+
+// ── 시작 ──────────────────────────────────────────────────────────────
+loadFilters().catch((e) => showError('필터 조회 실패: ' + e.message)).finally(refresh);
+</script>
+</body>
+</html>

@@ -60,7 +60,7 @@ public class StatsRepository {
                        COALESCE(SUM(clicks), 0)      AS clk,
                        MAX(updated_at)               AS upd
                 FROM ad_stats_hourly
-                WHERE """ + w.sql(),
+                WHERE \s""" + w.sql(),   // \s = 공백 유지 (텍스트 블록은 줄 끝 공백을 지워서 "WHEREstat_hour"가 됐었음)
                 (rs, i) -> new AdTotals(rs.getLong("req"), rs.getLong("imp"), rs.getLong("clk"),
                         rs.getObject("upd", LocalDateTime.class)),
                 w.args());
@@ -73,7 +73,7 @@ public class StatsRepository {
                        COALESCE(SUM(filled), 0)   AS fil,
                        MAX(updated_at)            AS upd
                 FROM placement_stats_hourly
-                WHERE """ + w.sql(),
+                WHERE \s""" + w.sql(),   // \s = 공백 유지 (텍스트 블록은 줄 끝 공백을 지워서 "WHEREstat_hour"가 됐었음)
                 (rs, i) -> new PlacementTotals(rs.getLong("req"), rs.getLong("fil"),
                         rs.getObject("upd", LocalDateTime.class)),
                 w.args());
